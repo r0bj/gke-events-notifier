@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	ver string = "0.3"
+	ver string = "0.4"
 	logDateLayout string = "2006-01-02 15:04:05"
 )
 
@@ -41,15 +41,15 @@ type PubSubMessage struct {
 
 // SlackRequestBody : containts slack request body
 type SlackRequestBody struct {
-	Text string `json:"text"`
+	Text string `json:"text,omitempty"`
 	Attachments []SlackMessageAttachment `json:"attachments"`
 }
 
 // SlackMessageAttachment : containts slack message attachment data
 type SlackMessageAttachment struct {
-	Text string `json:"text"`
-	Color string `json:"color"`
-	MrkdwnIn []string `json:"mrkdwn_in"`
+	Text string `json:"text,omitempty"`
+	Color string `json:"color,omitempty"`
+	MrkdwnIn []string `json:"mrkdwn_in,omitempty"`
 }
 
 func internalHealth(w http.ResponseWriter, req *http.Request) {
