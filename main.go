@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	ver string = "0.1"
+	ver string = "0.2"
 	logDateLayout string = "2006-01-02 15:04:05"
 )
 
@@ -65,6 +65,8 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
+
+	log.Debugf("Request data: %+v", strings.ReplaceAll(string(body), " ", ""))
 
 	data := string(m.Message.Data)
 	if data != "" {
