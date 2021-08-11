@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	ver string = "0.2"
+	ver string = "0.3"
 	logDateLayout string = "2006-01-02 15:04:05"
 )
 
@@ -50,6 +50,10 @@ type SlackMessageAttachment struct {
 	Text string `json:"text"`
 	Color string `json:"color"`
 	MrkdwnIn []string `json:"mrkdwn_in"`
+}
+
+func internalHealth(w http.ResponseWriter, req *http.Request) {
+        fmt.Fprintf(w, "OK\n")
 }
 
 func handlePubSub(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +155,7 @@ func main() {
 	}
 
 	http.HandleFunc("/", handlePubSub)
+	http.HandleFunc("/health", internalHealth)
 
 	port := *port
 	if port == "" {
