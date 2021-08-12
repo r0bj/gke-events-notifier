@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	ver string = "0.10"
+	ver string = "0.11"
 	logDateLayout string = "2006-01-02 15:04:05"
 )
 
@@ -108,10 +108,10 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 }
 
 func formatMessageAttributes (pubSubMessage PubSubMessage) string {
-	result := "cluster_name: " + pubSubMessage.Message.Attributes.ClusterName +
-		"\ncluster_location: " + pubSubMessage.Message.Attributes.ClusterLocation +
-		"\nproject_id: " + pubSubMessage.Message.Attributes.ProjectId +
-		"\ntype_url: " + pubSubMessage.Message.Attributes.TypeUrl
+	result := "*cluster_name:* " + pubSubMessage.Message.Attributes.ClusterName +
+		"\n*cluster_location:* " + pubSubMessage.Message.Attributes.ClusterLocation +
+		"\n*project_id:* " + pubSubMessage.Message.Attributes.ProjectId +
+		"\n*type_url:* " + pubSubMessage.Message.Attributes.TypeUrl
 
 	return result
 }
