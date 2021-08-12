@@ -14,15 +14,15 @@ import (
 )
 
 const (
-	ver string = "0.4"
+	ver string = "0.10"
 	logDateLayout string = "2006-01-02 15:04:05"
 )
 
 var (
-	verbose = kingpin.Flag("verbose", "Verbose mode").Short('v').Bool()
-	port = kingpin.Flag("port", "Port to listen on").Envar("PORT").String()
-	allowedTypeUrls = kingpin.Flag("allowed-type-urls", "Comma separated allowed type URLs, if empty all types will be allowed").String()
-	slackWebhookUrl = kingpin.Flag("slack-webhook-url", "Slack webhook URL").Envar("SLACK_WEBHOOK_URL").Required().String()
+	verbose = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
+	port = kingpin.Flag("port", "Port to listen on.").Envar("PORT").String()
+	allowedTypeUrls = kingpin.Flag("allowed-type-urls", "Comma separated allowed type URLs. If empty, all types will be allowed.").Envar("ALLOWED_TYPE_URLS").String()
+	slackWebhookUrl = kingpin.Flag("slack-webhook-url", "Slack webhook URL.").Envar("SLACK_WEBHOOK_URL").Required().String()
 )
 
 // PubSubMessage : containts PubSub message content
@@ -53,7 +53,7 @@ type SlackMessageAttachment struct {
 }
 
 func internalHealth(w http.ResponseWriter, req *http.Request) {
-        fmt.Fprintf(w, "OK\n")
+	fmt.Fprintf(w, "OK\n")
 }
 
 func handlePubSub(w http.ResponseWriter, r *http.Request) {
@@ -80,13 +80,14 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 				allowedTypeUrlFound := false
 				for _, allowedTypeUrl := range allowedTypeUrlsList {
 					if m.Message.Attributes.TypeUrl == allowedTypeUrl {
+						log.Debugf("Received type_url: %s present on allowed list", m.Message.Attributes.TypeUrl)
 						allowedTypeUrlFound = true
 						break
 					}
 				}
 
 				if !allowedTypeUrlFound {
-					log.Infof("Received type_url: %s is not on allowed list: %s", m.Message.Attributes.TypeUrl, *allowedTypeUrls)
+					log.Infof("Received type_url: %s is not on allowed list: %s, skipping", m.Message.Attributes.TypeUrl, *allowedTypeUrls)
 					return
 				}
 			}
@@ -100,6 +101,7 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 				},
 			}
 
+			log.Infof("Sending slack notification: %s", data)
 			sendSlackNotification(*slackWebhookUrl, slackRequestBody)
 		}
 	}
