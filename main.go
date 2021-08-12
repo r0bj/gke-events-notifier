@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	ver string = "0.11"
+	ver string = "0.12"
 	logDateLayout string = "2006-01-02 15:04:05"
 )
 
@@ -102,7 +102,9 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 			}
 
 			log.Infof("Sending slack notification: %s", data)
-			sendSlackNotification(*slackWebhookUrl, slackRequestBody)
+			if err := sendSlackNotification(*slackWebhookUrl, slackRequestBody); err != nil {
+				log.Errorf("Sending slack message fail: %v", err)
+			}
 		}
 	}
 }
@@ -138,8 +140,9 @@ func sendSlackNotification(webhookUrl string, slackRequestBody SlackRequestBody)
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(resp.Body)
 	if buf.String() != "ok" {
-		return fmt.Errorf("Non-ok response returned from Slack")
+		return fmt.Errorf("Non-ok response returned from Slack: %s", buf.String())
 	}
+
 	return nil
 }
 
