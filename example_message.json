@@ -1,0 +1,17 @@
+{
+  "message": {
+    "attributes": {
+      "cluster_location": "europe-west1-b",
+      "cluster_name": "c1",
+      "payload": "{\"resourceType\":\"MASTER\",\"operation\":\"operation-1628814454057-3a59706a\",\"operationStartTime\":\"2021-08-13T00:27:34.057220206Z\",\"currentVersion\":\"1.20.8-gke.2100\",\"targetVersion\":\"1.20.9-gke.700\"}",
+      "project_id": "589490720394",
+      "type_url": "type.googleapis.com/google.container.v1beta1.UpgradeEvent"
+    },
+    "data": "TWFzdGVyIGlzIHVwZ3JhZGluZyB0byB2ZXJzaW9uIDEuMjAuOS1na2UuNzAwLg==",
+    "messageId": "2808932945783327",
+    "message_id": "2808932945783327",
+    "publishTime": "2021-08-13T00:27:34.814Z",
+    "publish_time": "2021-08-13T00:27:34.814Z"
+  },
+  "subscription": "projects/my-project/subscriptions/gke-events-slack-notifier"
+}
