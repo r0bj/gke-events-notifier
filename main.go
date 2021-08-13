@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	ver string = "0.12"
+	ver string = "0.13"
 	logDateLayout string = "2006-01-02 15:04:05"
 )
 
@@ -110,12 +110,14 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 }
 
 func formatMessageAttributes (pubSubMessage PubSubMessage) string {
-	result := "*cluster_name:* " + pubSubMessage.Message.Attributes.ClusterName +
-		"\n*cluster_location:* " + pubSubMessage.Message.Attributes.ClusterLocation +
-		"\n*project_id:* " + pubSubMessage.Message.Attributes.ProjectId +
-		"\n*type_url:* " + pubSubMessage.Message.Attributes.TypeUrl
+	result := []string{
+		"*cluster_name:* " + pubSubMessage.Message.Attributes.ClusterName,
+		"*cluster_location:* " + pubSubMessage.Message.Attributes.ClusterLocation,
+		"*project_id:* " + pubSubMessage.Message.Attributes.ProjectId,
+		"*type_url:* " + pubSubMessage.Message.Attributes.TypeUrl,
+	}
 
-	return result
+	return strings.Join(result[:],"\n")
 }
 
 func sendSlackNotification(webhookUrl string, slackRequestBody SlackRequestBody) error {
