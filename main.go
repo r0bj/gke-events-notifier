@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	ver string = "0.14"
+	ver string = "0.15"
 	logDateLayout string = "2006-01-02 15:04:05"
 )
 
@@ -50,6 +50,14 @@ type SlackMessageAttachment struct {
 	Text string `json:"text,omitempty"`
 	Color string `json:"color,omitempty"`
 	MrkdwnIn []string `json:"mrkdwn_in,omitempty"`
+	Fields []SlackAttachmentField `json:"fields"`
+}
+
+// SlackAttachmentField : containts slack attachment field data
+type SlackAttachmentField struct {
+	Short bool `json:"short"`
+	Title string `json:"title"`
+	Value string `json:"value"`
 }
 
 func internalHealth(w http.ResponseWriter, req *http.Request) {
@@ -96,7 +104,7 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 				Text: data,
 				Attachments: []SlackMessageAttachment{
 					SlackMessageAttachment{
-						Text: formatMessageAttributes(m),
+						Fields: fillMessageFields(m),
 					},
 				},
 			}
@@ -109,15 +117,35 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func formatMessageAttributes (pubSubMessage PubSubMessage) string {
-	result := []string{
-		"*cluster name:* " + pubSubMessage.Message.Attributes.ClusterName,
-		"*cluster location:* " + pubSubMessage.Message.Attributes.ClusterLocation,
-		"*project id:* " + pubSubMessage.Message.Attributes.ProjectId,
-		"*type_url:* " + pubSubMessage.Message.Attributes.TypeUrl,
+func fillMessageFields (pubSubMessage PubSubMessage) []SlackAttachmentField {
+	fields := []SlackAttachmentField{
+		SlackAttachmentField{
+			Title: "cluster name",
+			Value: pubSubMessage.Message.Attributes.ClusterName,
+			Short: true,
+		},
+		SlackAttachmentField{
+			Title: "cluster location",
+			Value: pubSubMessage.Message.Attributes.ClusterLocation,
+			Short: true,
+		},
+		SlackAttachmentField{
+			Title: "project number",
+			Value: pubSubMessage.Message.Attributes.ProjectId,
+			Short: true,
+		},
 	}
 
-	return strings.Join(result[:],"\n")
+	typeUrl := strings.Split(pubSubMessage.Message.Attributes.TypeUrl, ".")
+	eventType := typeUrl[len(typeUrl)-1]
+
+	fields = append(fields, SlackAttachmentField{
+		Title: "event type",
+		Value: eventType,
+		Short: true,
+	})
+
+	return fields
 }
 
 func sendSlackNotification(webhookUrl string, slackRequestBody SlackRequestBody) error {
