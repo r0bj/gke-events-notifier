@@ -1,101 +1,105 @@
 package main
 
 import (
-	"encoding/json"
-	"io/ioutil"
-	"net/http"
 	"bytes"
-	"time"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
-	log "github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/alecthomas/kingpin/v2"
 )
 
 const (
 	ver string = "0.15"
-	logDateLayout string = "2006-01-02 15:04:05"
 )
 
 var (
-	verbose = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
-	port = kingpin.Flag("port", "Port to listen on.").Envar("PORT").String()
+	verbose         = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
+	port            = kingpin.Flag("port", "Port to listen on.").Envar("PORT").Default("8080").String()
 	allowedTypeUrls = kingpin.Flag("allowed-type-urls", "Comma separated allowed type URLs. If empty, all types will be allowed.").Envar("ALLOWED_TYPE_URLS").String()
 	slackWebhookUrl = kingpin.Flag("slack-webhook-url", "Slack webhook URL.").Envar("SLACK_WEBHOOK_URL").Required().String()
 )
 
-// PubSubMessage : containts PubSub message content
+// PubSubMessage contains PubSub message content
 type PubSubMessage struct {
 	Message struct {
-		Data []byte `json:"data"`
+		Data       []byte `json:"data"`
 		Attributes struct {
 			ClusterLocation string `json:"cluster_location"`
-			ClusterName string `json:"cluster_name"`
-			ProjectId string `json:"project_id"`
-			TypeUrl string `json:"type_url"`
+			ClusterName     string `json:"cluster_name"`
+			Payload         string `json:"payload"`
+			ProjectId       string `json:"project_id"`
+			TypeUrl         string `json:"type_url"`
 		} `json:"attributes"`
 	} `json:"message"`
 	Subscription string `json:"subscription"`
 }
 
-// SlackRequestBody : containts slack request body
+// SlackRequestBody contains Slack request body
 type SlackRequestBody struct {
-	Text string `json:"text,omitempty"`
+	Text        string                   `json:"text,omitempty"`
 	Attachments []SlackMessageAttachment `json:"attachments"`
 }
 
-// SlackMessageAttachment : containts slack message attachment data
+// SlackMessageAttachment contains slack message attachment data
 type SlackMessageAttachment struct {
-	Text string `json:"text,omitempty"`
-	Color string `json:"color,omitempty"`
-	MrkdwnIn []string `json:"mrkdwn_in,omitempty"`
-	Fields []SlackAttachmentField `json:"fields"`
+	Text     string                 `json:"text,omitempty"`
+	Color    string                 `json:"color,omitempty"`
+	MrkdwnIn []string               `json:"mrkdwn_in,omitempty"`
+	Fields   []SlackAttachmentField `json:"fields"`
 }
 
-// SlackAttachmentField : containts slack attachment field data
+// SlackAttachmentField contains slack attachment field data
 type SlackAttachmentField struct {
-	Short bool `json:"short"`
+	Short bool   `json:"short"`
 	Title string `json:"title"`
 	Value string `json:"value"`
 }
 
-func internalHealth(w http.ResponseWriter, req *http.Request) {
-	fmt.Fprintf(w, "OK\n")
-}
-
 func handlePubSub(w http.ResponseWriter, r *http.Request) {
 	var m PubSubMessage
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Infof("ioutil.ReadAll: %v", err)
+		slog.Error("Data read failed", "error", err)
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 	if err := json.Unmarshal(body, &m); err != nil {
-		log.Infof("json.Unmarshal: %v", err)
+		slog.Error("Data unmarshal failed", "error", err)
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	log.Debugf("Request data: %+v", strings.ReplaceAll(string(body), " ", ""))
+	slog.Debug("Request", "data", strings.ReplaceAll(string(body), " ", ""))
 
 	data := string(m.Message.Data)
 	if data != "" {
 		if m.Message.Attributes.TypeUrl != "" {
 			if *allowedTypeUrls != "" {
 				allowedTypeUrlsList := strings.Split(*allowedTypeUrls, ",")
+				for i := range allowedTypeUrlsList {
+					allowedTypeUrlsList[i] = strings.TrimSpace(allowedTypeUrlsList[i])
+				}
+
 				allowedTypeUrlFound := false
 				for _, allowedTypeUrl := range allowedTypeUrlsList {
 					if m.Message.Attributes.TypeUrl == allowedTypeUrl {
-						log.Debugf("Received type_url: %s present on allowed list", m.Message.Attributes.TypeUrl)
+						slog.Debug("Received type_url present on allowed list", "type_url", m.Message.Attributes.TypeUrl)
 						allowedTypeUrlFound = true
 						break
 					}
 				}
 
 				if !allowedTypeUrlFound {
-					log.Infof("Received type_url: %s is not on allowed list: %s, skipping", m.Message.Attributes.TypeUrl, *allowedTypeUrls)
+					slog.Debug("Received type_url is not on allowed list, skipping", "type_url", m.Message.Attributes.TypeUrl, "allowed list", *allowedTypeUrls)
 					return
 				}
 			}
@@ -109,15 +113,15 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 				},
 			}
 
-			log.Infof("Sending slack notification: %s", data)
+			slog.Info("Sending slack notification", "message", data)
 			if err := sendSlackNotification(*slackWebhookUrl, slackRequestBody); err != nil {
-				log.Errorf("Sending slack message fail: %v", err)
+				slog.Error("Sending slack message fail", "error", err)
 			}
 		}
 	}
 }
 
-func fillMessageFields (pubSubMessage PubSubMessage) []SlackAttachmentField {
+func fillMessageFields(pubSubMessage PubSubMessage) []SlackAttachmentField {
 	fields := []SlackAttachmentField{
 		SlackAttachmentField{
 			Title: "cluster name",
@@ -166,6 +170,11 @@ func sendSlackNotification(webhookUrl string, slackRequestBody SlackRequestBody)
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Non-200 status returned from Slack: %d", resp.StatusCode)
+	}
 
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(resp.Body)
@@ -176,28 +185,62 @@ func sendSlackNotification(webhookUrl string, slackRequestBody SlackRequestBody)
 	return nil
 }
 
+// handleHealthz responds with "OK" indicating the application is running.
+func handleHealthz(w http.ResponseWriter, req *http.Request) {
+	fmt.Fprintf(w, "OK\n")
+}
+
+// startHTTPServer starts the HTTP server to handle health and metrics endpoints.
+func startHTTPServer(ctx context.Context, listenAddress string) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", handleHealthz)
+	mux.HandleFunc("/", handlePubSub)
+
+	server := &http.Server{
+		Addr:    listenAddress,
+		Handler: mux,
+	}
+
+	// Shutdown the server gracefully when context is done
+	go func() {
+		<-ctx.Done()
+		slog.Info("Shutting down HTTP server...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			slog.Error("Error shutting down HTTP server", "error", err)
+		}
+	}()
+
+	slog.Info("Starting HTTP server", "address", listenAddress)
+
+	return server.ListenAndServe()
+}
+
 func main() {
-	customFormatter := new(log.TextFormatter)
-	customFormatter.TimestampFormat = logDateLayout
-	customFormatter.FullTimestamp = true
-	log.SetFormatter(customFormatter)
+	var loggingLevel = new(slog.LevelVar)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: loggingLevel}))
+	slog.SetDefault(logger)
 
 	kingpin.Version(ver)
 	kingpin.Parse()
 
 	if *verbose {
-		log.SetLevel(log.DebugLevel)
+		loggingLevel.Set(slog.LevelDebug)
 	}
 
-	http.HandleFunc("/", handlePubSub)
-	http.HandleFunc("/health", internalHealth)
+	slog.Info("Program started", "version", ver)
 
-	port := *port
-	if port == "" {
-		port = "8080"
-		log.Infof("Defaulting to port %s", port)
+	listenAddress := fmt.Sprintf(":%s", *port)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Start the HTTP server
+	if err := startHTTPServer(ctx, listenAddress); err != nil && err != http.ErrServerClosed {
+		slog.Error("HTTP server encountered an error", "error", err)
+		os.Exit(1)
 	}
 
-	log.Infof("Listening on port %s", port)
-	log.Fatal(http.ListenAndServe(":" + port, nil))
+	slog.Info("Program gracefully stopped")
 }

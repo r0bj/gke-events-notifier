@@ -1,15 +1,16 @@
-FROM golang:1.16.7 as builder
+FROM golang:1.23.4 AS builder
 
 WORKDIR /workspace
 
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY main.go .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a --ldflags '-w -extldflags "-static"' -tags netgo -installsuffix netgo -o gke-events-notifier .
+COPY *.go ./
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o gke-events-notifier .
 
 
-FROM alpine:3.13 as certs
+FROM alpine:3.21 AS certs
 
 RUN apk add --no-cache ca-certificates
 
