@@ -81,43 +81,49 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 	slog.Debug("Request", "data", strings.ReplaceAll(string(body), " ", ""))
 
 	data := string(m.Message.Data)
-	if data != "" {
-		if m.Message.Attributes.TypeUrl != "" {
-			if *allowedTypeUrls != "" {
-				allowedTypeUrlsList := strings.Split(*allowedTypeUrls, ",")
-				for i := range allowedTypeUrlsList {
-					allowedTypeUrlsList[i] = strings.TrimSpace(allowedTypeUrlsList[i])
-				}
+	if data == "" {
+		slog.Warn("Received empty data payload, skipping.")
+		return
+	}
 
-				allowedTypeUrlFound := false
-				for _, allowedTypeUrl := range allowedTypeUrlsList {
-					if m.Message.Attributes.TypeUrl == allowedTypeUrl {
-						slog.Debug("Received type_url present on allowed list", "type_url", m.Message.Attributes.TypeUrl)
-						allowedTypeUrlFound = true
-						break
-					}
-				}
+	if m.Message.Attributes.TypeUrl == "" {
+		slog.Warn("No type_url in message attributes, skipping Slack notification.")
+		return
+	}
 
-				if !allowedTypeUrlFound {
-					slog.Debug("Received type_url is not on allowed list, skipping", "type_url", m.Message.Attributes.TypeUrl, "allowed list", *allowedTypeUrls)
-					return
-				}
-			}
+	if *allowedTypeUrls != "" {
+		allowedTypeUrlsList := strings.Split(*allowedTypeUrls, ",")
+		for i := range allowedTypeUrlsList {
+			allowedTypeUrlsList[i] = strings.TrimSpace(allowedTypeUrlsList[i])
+		}
 
-			slackRequestBody := SlackRequestBody{
-				Text: data,
-				Attachments: []SlackMessageAttachment{
-					SlackMessageAttachment{
-						Fields: fillMessageFields(m),
-					},
-				},
-			}
-
-			slog.Info("Sending slack notification", "message", data)
-			if err := sendSlackNotification(*slackWebhookUrl, slackRequestBody); err != nil {
-				slog.Error("Sending slack message fail", "error", err)
+		allowedTypeUrlFound := false
+		for _, allowedTypeUrl := range allowedTypeUrlsList {
+			if m.Message.Attributes.TypeUrl == allowedTypeUrl {
+				slog.Debug("Received type_url present on allowed list", "type_url", m.Message.Attributes.TypeUrl)
+				allowedTypeUrlFound = true
+				break
 			}
 		}
+
+		if !allowedTypeUrlFound {
+			slog.Debug("Received type_url is not on allowed list, skipping", "type_url", m.Message.Attributes.TypeUrl, "allowed list", *allowedTypeUrls)
+			return
+		}
+	}
+
+	slackRequestBody := SlackRequestBody{
+		Text: data,
+		Attachments: []SlackMessageAttachment{
+			SlackMessageAttachment{
+				Fields: fillMessageFields(m),
+			},
+		},
+	}
+
+	slog.Info("Sending slack notification", "message", data)
+	if err := sendSlackNotification(r.Context(), *slackWebhookUrl, slackRequestBody); err != nil {
+		slog.Error("Sending slack message fail", "error", err)
 	}
 }
 
@@ -152,13 +158,15 @@ func fillMessageFields(pubSubMessage PubSubMessage) []SlackAttachmentField {
 	return fields
 }
 
-func sendSlackNotification(webhookUrl string, slackRequestBody SlackRequestBody) error {
+func sendSlackNotification(ctx context.Context, webhookUrl string, slackRequestBody SlackRequestBody) error {
+    // Marshal the Slack request body
 	slackBody, err := json.Marshal(slackRequestBody)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, webhookUrl, bytes.NewBuffer(slackBody))
+    // Create the HTTP request using the provided context
+    req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookUrl, bytes.NewBuffer(slackBody))
 	if err != nil {
 		return err
 	}
@@ -178,6 +186,9 @@ func sendSlackNotification(webhookUrl string, slackRequestBody SlackRequestBody)
 
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(resp.Body)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return fmt.Errorf("Failed to read Slack response body: %w", err)
+	}
 	if buf.String() != "ok" {
 		return fmt.Errorf("Non-ok response returned from Slack: %s", buf.String())
 	}
