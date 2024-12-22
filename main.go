@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	ver string = "0.15"
+	ver string = "0.16"
 )
 
 var (
@@ -122,8 +122,9 @@ func handlePubSub(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("Sending slack notification", "message", data)
-	if err := sendSlackNotification(r.Context(), *slackWebhookUrl, slackRequestBody); err != nil {
+	if err := sendSlackNotificationWithRetry(r.Context(), *slackWebhookUrl, slackRequestBody); err != nil {
 		slog.Error("Sending slack message fail", "error", err)
+		http.Error(w, "Failed to send Slack notification", http.StatusInternalServerError)
 	}
 }
 
@@ -158,15 +159,51 @@ func fillMessageFields(pubSubMessage PubSubMessage) []SlackAttachmentField {
 	return fields
 }
 
-func sendSlackNotification(ctx context.Context, webhookUrl string, slackRequestBody SlackRequestBody) error {
-    // Marshal the Slack request body
+func sendSlackNotificationWithRetry(ctx context.Context, webhookUrl string, slackRequestBody SlackRequestBody) error {
+	const maxAttempts = 3
+	const baseDelay = time.Second
+
+	var lastErr error
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Attempt to send
+		lastErr = doSendSlackNotification(ctx, webhookUrl, slackRequestBody)
+		if lastErr == nil {
+			// Success on this attempt
+			return nil
+		}
+
+		// If it's not the last attempt, wait before retrying
+		if attempt < maxAttempts {
+			// Log a warning that we're about to retry
+			slog.Warn("Slack send failed, retrying...", "attempt", attempt, "error", lastErr)
+
+			// Exponential backoff: for attempt n, wait 2^(n-1)*baseDelay
+			delay := time.Duration(1<<(attempt-1)) * baseDelay
+			select {
+			case <-time.After(delay):
+				// Continue to next attempt
+			case <-ctx.Done():
+				// If the context got canceled or timed out, stop retrying immediately
+				return ctx.Err()
+			}
+		}
+	}
+
+	// All attempts failed
+	return fmt.Errorf("Failed to send Slack notification after %d attempts: %w", maxAttempts, lastErr)
+}
+
+// doSendSlackNotification is your existing logic to send Slack messages.
+func doSendSlackNotification(ctx context.Context, webhookUrl string, slackRequestBody SlackRequestBody) error {
+	// Marshal the Slack request body
 	slackBody, err := json.Marshal(slackRequestBody)
 	if err != nil {
 		return err
 	}
 
-    // Create the HTTP request using the provided context
-    req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookUrl, bytes.NewBuffer(slackBody))
+	// Create the HTTP request using the provided context
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookUrl, bytes.NewBuffer(slackBody))
 	if err != nil {
 		return err
 	}
@@ -181,16 +218,16 @@ func sendSlackNotification(ctx context.Context, webhookUrl string, slackRequestB
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Non-200 status returned from Slack: %d", resp.StatusCode)
+		return fmt.Errorf("non-200 status returned from Slack: %d", resp.StatusCode)
 	}
 
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
 	if _, err := buf.ReadFrom(resp.Body); err != nil {
-		return fmt.Errorf("Failed to read Slack response body: %w", err)
+		return fmt.Errorf("failed to read Slack response body: %w", err)
 	}
+
 	if buf.String() != "ok" {
-		return fmt.Errorf("Non-ok response returned from Slack: %s", buf.String())
+		return fmt.Errorf("non-ok response returned from Slack: %s", buf.String())
 	}
 
 	return nil
